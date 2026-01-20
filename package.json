@@ -1,0 +1,8 @@
+{
+  "name": "box-audit-app",
+  "version": "1.0.0",
+  "description": "Box Audit Speed Entry App",
+  "main": "main.js",
+  "author": "Box Audit",
+  "license": "MIT"
+}

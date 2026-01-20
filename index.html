@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#2a2a2a" />
+    <meta
+      name="description"
+      content="Rapid inventory data entry for physical box audits"
+    />
+    <link rel="manifest" href="manifest.json" />
+    <title>Box Audit - Speed Entry</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <!-- Inline style overrides or specific component styles can go here if needed, but keeping clean for now -->
+  </head>
+  <body>
+    <div class="header">
+      <div style="display: flex; align-items: center; gap: 1rem">
+        <div class="current-box-display" id="currentBoxDisplay">
+          No Box Selected
+        </div>
+        <span
+          class="location-type"
+          id="currentLocationType"
+          style="display: none"
+        ></span>
+        <span
+          class="completion-status"
+          id="completionStatus"
+          style="display: none"
+          >Completed</span
+        >
+        <div
+          class="secondary-location-container"
+          id="secondaryLocationContainer"
+          style="display: none"
+        >
+          <span class="secondary-location-label">on:</span>
+          <input
+            type="text"
+            id="secondaryLocationInput"
+            class="secondary-location-input"
+            placeholder="SHELF 4A"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <span
+            class="secondary-location-status"
+            id="secondaryLocationStatus"
+            style="display: none"
+            >Saved</span
+          >
+        </div>
+        <span
+          class="secondary-location-display"
+          id="secondaryLocationDisplay"
+          style="display: none"
+        ></span>
+      </div>
+      <div class="box-info">
+        <div class="item-count" id="itemCount">0 items</div>
+        <div class="session-stats" id="sessionStats"></div>
+      </div>
+    </div>
+
+    <script src="config.js"></script>
+    <div class="main-container">
+      <!-- Left Panel: Progress Bar -->
+      <div class="left-panel">
+        <div class="panel-section">
+          <h3>Box Progress</h3>
+          <div class="progress-bar-container" id="progressBar">
+            <!-- Progress boxes will be generated here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Center Panel: Input & Items -->
+      <div class="center-panel">
+        <div class="input-section">
+          <div class="input-wrapper">
+            <input
+              type="text"
+              id="itemInput"
+              placeholder="Type box number (BOX050), shelf (SHELF 2C), or item name, then press Enter"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          <div class="input-hint">
+            Enter: Save • Ctrl+Z: Undo • Ctrl+D: Complete box • Right-click box
+            to complete
+          </div>
+          <div class="input-hint">
+            Location formats: BOX081 • SHELF 2C • BOX081 SHELF 2C
+          </div>
+          <div class="recent-locations" id="recentLocations"></div>
+          <div class="search-section">
+            <input
+              type="text"
+              id="searchInput"
+              class="search-input"
+              placeholder="Search items, boxes, or shelves"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <div class="search-results" id="searchResults"></div>
+          </div>
+        </div>
+
+        <div class="items-section">
+          <div class="items-header">
+            <h3>Items</h3>
+          </div>
+          <div class="items-list" id="itemsList">
+            <div class="no-box-state">
+              <h2>Start by entering a box or shelf number</h2>
+              <p>
+                Type a box number like "BOX050" or shelf like "SHELF 2C" and
+                press Enter
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Panel: Stats -->
+      <div class="right-panel">
+        <div class="panel-section">
+          <h3>Session Stats</h3>
+          <div
+            id="sessionInfo"
+            style="
+              font-size: 0.85rem;
+              color: #999;
+              margin-bottom: 1rem;
+              padding-bottom: 1rem;
+              border-bottom: 1px solid #3a3a3a;
+            "
+          ></div>
+          <div
+            id="detailedStats"
+            style="font-size: 0.9rem; line-height: 1.8; color: #ccc"
+          >
+            <!-- Detailed stats will be generated here -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div class="shortcuts">
+        <span><strong>Enter:</strong> Save item</span>
+        <span><strong>Ctrl+Z:</strong> Undo</span>
+        <span><strong>Ctrl+Shift+Z:</strong> Redo</span>
+        <span><strong>Esc:</strong> Clear input</span>
+        <span><strong>Ctrl+E:</strong> Export CSV</span>
+      </div>
+      <div style="display: flex; gap: 0.5rem; align-items: center">
+        <div
+          id="saveError"
+          style="
+            display: none;
+            color: #ff6b6b;
+            font-size: 0.85rem;
+            margin-right: 1rem;
+            padding: 0.25rem 0.5rem;
+            background: #3a1a1a;
+            border-radius: 3px;
+          "
+        ></div>
+        <input
+          type="file"
+          id="importFile"
+          accept=".csv"
+          style="display: none"
+          onchange="importFromCSV(event)"
+        />
+        <button
+          class="btn-import"
+          id="importBtn"
+          onclick="document.getElementById('importFile').click()"
+        >
+          Import CSV
+        </button>
+        <button class="btn-export" id="exportBtn">Export CSV</button>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/data.js"></script>
+    <script src="js/app.js"></script>
+
+    <!-- Service Worker -->
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          const swPath = "./service-worker.js";
+          navigator.serviceWorker
+            .register(swPath, { scope: "./" })
+            .then((registration) => {
+              console.log("Service Worker registered:", registration);
+              registration.addEventListener("updatefound", () => {
+                const newWorker = registration.installing;
+                newWorker.addEventListener("statechange", () => {
+                  if (
+                    newWorker.state === "installed" &&
+                    navigator.serviceWorker.controller
+                  ) {
+                    console.log("New version available. Refresh to update.");
+                  }
+                });
+              });
+            })
+            .catch((error) => {
+              console.log("Service Worker registration failed:", error);
+            });
+        });
+      }
+    </script>
+  </body>
+</html>
