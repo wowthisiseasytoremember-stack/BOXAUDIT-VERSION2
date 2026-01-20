@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BoxAudit Mobile</title>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Ubuntu,Cantarell,sans-serif;background:#111;color:#eee}
+.wrap{max-width:640px;margin:0 auto;padding:0.75rem}
+.row{display:flex;gap:0.5rem;align-items:center}
+.col{display:flex;flex-direction:column;gap:0.35rem}
+.btn{background:#2a2a2a;color:#e0e0e0;border:1px solid #3a3a3a;border-radius:6px;padding:0.55rem 0.8rem;cursor:pointer}
+.btn-primary{background:#4a9eff;border-color:#3a7ecc;color:#041726}
+.btn-danger{background:#ff6b6b;border-color:#cc5555;color:#1a0a0a}
+input{background:#000;color:#eee;border:1px solid #333;border-radius:6px;padding:0.55rem}
+.section{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;padding:0.75rem;margin-bottom:0.75rem}
+.title{font-size:1.05rem;color:#4a9eff;margin-bottom:0.35rem}
+.list{display:flex;flex-direction:column;gap:0.35rem}
+.item{display:flex;justify-content:space-between;align-items:center;padding:0.45rem;background:#171717;border:1px solid #2a2a2a;border-radius:6px}
+.meta{font-size:0.85rem;color:#aaa}
+.status{font-size:0.85rem;color:#ffda6b}
+.pill{background:#222;border:1px solid #333;color:#ddd;border-radius:999px;padding:0.25rem 0.5rem}
+.small{font-size:0.85rem;color:#aaa}
+.flex{display:flex;gap:0.5rem;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="section">
+    <div class="title">Location</div>
+    <div class="row">
+      <input id="boxInput" placeholder="BOX050 or SHELF 2C" style="flex:1">
+      <button id="switchBtn" class="btn btn-primary">Switch</button>
+    </div>
+    <div class="row" style="margin-top:0.5rem">
+      <div id="currentLoc" class="pill"></div>
+      <button id="refreshBtn" class="btn">Refresh</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="title">Add Item</div>
+    <div class="row">
+      <input id="itemName" placeholder="Item name" style="flex:1">
+      <input id="itemQty" type="number" min="1" value="1" style="width:80px">
+      <button id="addBtn" class="btn btn-primary">Add</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="title">Items</div>
+    <div id="itemsList" class="list"></div>
+  </div>
+
+  <div class="section">
+    <div class="title">Missing</div>
+    <div class="row">
+      <input id="resolveTarget" placeholder="Target location (BOX### or SHELF)" style="flex:1">
+    </div>
+    <div id="missingList" class="list" style="margin-top:0.5rem"></div>
+  </div>
+
+  <div class="section">
+    <div class="title">Boxes</div>
+    <div id="boxesList" class="list"></div>
+  </div>
+</div>
+
+<script>
+let currentBox = 'BOX001';
+
+async function api(path, opts){
+  const r=await fetch(path,Object.assign({headers:{'Content-Type':'application/json'}},opts||{}));
+  if(!r.ok)throw new Error('request failed');
+  return r.json()
+}
+
+function escapeHtml(t){const d=document.createElement('div');d.textContent=t;return d.innerHTML}
+function friendlyBoxLabel(key){const m=String(key).match(/^BOX0*(\d+)$/i);return m?m[1]:key}
+function getShelfNumber(loc){const m=String(loc||'').match(/^SHELF\s*(\d+)/i);return m?parseInt(m[1],10):null}
+
+async function loadBoxes(){
+  try{
+    const resp=await api('/api/boxes');
+    const keys=(resp.boxes||[]).filter(k=>k!=='MISSING');
+    const boxes=keys.filter(k=>/^BOX\d+$/i.test(k));
+    const infos=await Promise.all(boxes.map(async k=>{
+      try{
+        const info=await api('/api/box?box='+encodeURIComponent(k));
+        const loc=(info.data&&info.data.secondaryLocation)||null;
+        return {key:k,shelfNum:getShelfNumber(loc)};
+      }catch{return {key:k,shelfNum:null}}
+    }));
+    const byShelf=new Map();
+    infos.forEach(b=>{
+      const s=b.shelfNum==null?-1:b.shelfNum;
+      if(!byShelf.has(s)) byShelf.set(s,[]);
+      byShelf.get(s).push(b.key);
+    });
+    const order=[...byShelf.keys()].sort((a,b)=>{
+      if(a===-1&&b===-1) return 0;
+      if(a===-1) return 1;
+      if(b===-1) return -1;
+      return a-b;
+    });
+    const el=document.getElementById('boxesList');
+    el.innerHTML=order.map(s=>{
+      const title=s===-1?'UNASSIGNED BOXES':'SHELF '+s;
+      const items=(byShelf.get(s)||[]).sort((x,y)=>{
+        const nx=parseInt((x.match(/BOX0*(\d+)/i)||[])[1]||'0',10);
+        const ny=parseInt((y.match(/BOX0*(\d+)/i)||[])[1]||'0',10);
+        return nx-ny;
+      }).map(k=>`<button class="btn" data-box="${escapeHtml(k)}">${escapeHtml(friendlyBoxLabel(k))}</button>`).join('')||'<div class="small">No boxes</div>';
+      return `<div class="item" style="flex-direction:column;align-items:flex-start;gap:0.5rem"><div class="status">${escapeHtml(title)}</div><div class="flex">${items}</div></div>`;
+    }).join('');
+    el.querySelectorAll('button').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        currentBox=btn.dataset.box;
+        document.getElementById('boxInput').value=currentBox;
+        refreshBox();
+      })
+    });
+  }catch(e){}
+}
+
+async function refreshBox(){
+  try{
+    const data=await api('/api/box?box='+encodeURIComponent(currentBox));
+    document.getElementById('currentLoc').textContent=data.box;
+    const items=(data.data&&data.data.items)||[];
+    const el=document.getElementById('itemsList');
+    el.innerHTML=items.map(i=>`<div class="item"><div>${escapeHtml(i.name)} <span class="meta">×${i.qty||1}</span></div><div class="meta">${escapeHtml(data.box)}</div></div>`).join('')||'<div class="small">No items</div>';
+    loadMissing();
+  }catch(e){}
+}
+
+async function loadMissing(){
+  try{
+    const data=await api('/api/box?box='+encodeURIComponent('MISSING'));
+    const items=(data.data&&data.data.items)||[];
+    const el=document.getElementById('missingList');
+    el.innerHTML=items.map(i=>`<div class="item"><div>${escapeHtml(i.name)}</div><div class="flex"><button class="btn btn-primary" data-id="${escapeHtml(String(i.id))}">Mark found</button></div></div>`).join('')||'<div class="small">No missing items</div>';
+    el.querySelectorAll('button').forEach(btn=>{
+      btn.addEventListener('click',async()=>{
+        const target=document.getElementById('resolveTarget').value.trim();
+        if(!target){alert('Enter target location first');return}
+        try{
+          await api('/api/missing/mark-found',{method:'POST',body:JSON.stringify({itemId:btn.dataset.id,target})});
+          document.getElementById('resolveTarget').value='';
+          await loadMissing();
+          await refreshBox();
+        }catch(e){alert('Failed to move item')}
+      })
+    });
+  }catch(e){}
+}
+
+async function addItem(){
+  const name=document.getElementById('itemName').value.trim();
+  const qty=parseInt(document.getElementById('itemQty').value,10)||1;
+  if(!name){alert('Enter item name');return}
+  try{
+    await api('/api/item/add',{method:'POST',body:JSON.stringify({box:currentBox,name,qty})});
+    document.getElementById('itemName').value='';
+    document.getElementById('itemQty').value='1';
+    await refreshBox();
+  }catch(e){alert('Failed to add item')}
+}
+
+document.getElementById('switchBtn').addEventListener('click',()=>{
+  const v=document.getElementById('boxInput').value.trim();
+  if(!v)return;
+  currentBox=v;
+  refreshBox()
+});
+document.getElementById('refreshBtn').addEventListener('click',refreshBox);
+document.getElementById('addBtn').addEventListener('click',addItem);
+
+refreshBox();
+loadBoxes();
+</script>
+</body>
+</html>
