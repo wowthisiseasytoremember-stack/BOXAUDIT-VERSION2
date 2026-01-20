@@ -667,8 +667,107 @@ body {
 }
 
 .no-box-state h2 {
-  color: #bbb;
-  margin-bottom: 0.75rem;
-  font-size: 1.1rem;
-  font-weight: 500;
+    color: #bbb;
+    margin-bottom: 0.75rem;
+    font-size: 1.1rem;
+    font-weight: 500;
+}
+
+/* FAB & Voice Context */
+.fab-btn {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: #4a9eff;
+    border: none;
+    color: white;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    z-index: 1000;
+}
+
+.fab-btn:hover {
+    transform: scale(1.1);
+    background: #5aaeff;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+}
+
+.fab-btn.listening {
+    background: #ff4444;
+    animation: pulse 1.5s infinite;
+}
+
+.fab-btn.error {
+    background: #ffaa44;
+}
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.7); }
+    70% { box-shadow: 0 0 0 15px rgba(255, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 68, 68, 0); }
+}
+
+.context-banner {
+    position: fixed;
+    bottom: 2rem;
+    right: 7rem; /* Left of FAB */
+    background: #1f2a3a;
+    border: 1px solid #2f4f7a;
+    padding: 0.75rem 1rem;
+    border-radius: 30px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    z-index: 999;
+}
+
+.context-tag {
+    background: #2f4f7a;
+    color: #8bbcff;
+    padding: 0.25rem 0.75rem;
+    border-radius: 15px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.context-clear-btn {
+    background: none;
+    border: none;
+    color: #666;
+    font-size: 1.2rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    padding: 0 0.25rem;
+    transition: color 0.2s;
+}
+
+.context-clear-btn:hover {
+    color: #ff6b6b;
+}
+
+.toast-feedback {
+    position: fixed;
+    bottom: 6rem;
+    right: 2rem;
+    background: #333;
+    color: white;
+    padding: 0.75rem 1.25rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    z-index: 1001;
+    animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
 }
