@@ -27,6 +27,11 @@ function createEmptyBoxData() {
     };
 }
 
+/**
+ * Ensures a box data object matches the expected schema.
+ * @param {Object} boxData - The raw box data object (potentially incomplete).
+ * @returns {BoxData} A complete BoxData object with defaults filled in.
+ */
 function ensureBoxDataShape(boxData) {
     if (!boxData || typeof boxData !== 'object') return createEmptyBoxData();
     if (!Array.isArray(boxData.items)) boxData.items = [];
@@ -36,6 +41,11 @@ function ensureBoxDataShape(boxData) {
     return boxData;
 }
 
+/**
+ * Retrieves an existing box or creates a new one if it doesn't exist.
+ * @param {string} boxKey - The normalized box key (e.g., "BOX042").
+ * @returns {BoxData} The requested box data.
+ */
 function ensureBoxExists(boxKey) {
     const existing = currentSession.boxes[boxKey];
     if (!existing) {
@@ -47,6 +57,11 @@ function ensureBoxExists(boxKey) {
 }
 
 // Normalize box/shelf number to consistent format
+/**
+ * Normalizes user input into a standard box or shelf key.
+ * @param {string} boxNumber - Raw input (e.g., "42", "shelf 2c", "box 05").
+ * @returns {string|null} Normalized key (e.g., "BOX042", "SHELF 2C") or null if invalid.
+ */
 function normalizeBoxNumber(boxNumber) {
     if (!boxNumber) return null;
     
@@ -139,13 +154,47 @@ function parseLocationInput(raw) {
     return null;
 }
 
-// Parse quantity from item name (e.g., "batteries x3" -> {name: "batteries", qty: 3})
+const WORD_TO_NUM = {
+    'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+    'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+    'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14, 'fifteen': 15,
+    'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19, 'twenty': 20,
+    'a dozen': 12, 'dozen': 12, 'couple': 2, 'pair': 2
+};
+
+// Parse quantity from item name (e.g., "batteries x3", "5 widgets", "five cables")
 function parseQuantity(itemName) {
     if (!itemName) return { name: itemName, qty: 1 };
     
     let name = itemName.trim();
     let qty = 1;
     
+    // 1. Check for prefix number (e.g., "5 widgets", "100 cables")
+    // Avoid matching if it's just a number like "1994" (year)? No, usually in audit context it is quantity.
+    // We require a space after the number to be safe.
+    const prefixNumMatch = name.match(/^(\d+)\s+(.+)$/);
+    if (prefixNumMatch) {
+         qty = parseInt(prefixNumMatch[1], 10);
+         name = prefixNumMatch[2].trim();
+         return { name, qty };
+    }
+
+    // 2. Check for prefix word (e.g., "Five widgets")
+    const lowerName = name.toLowerCase();
+    for (const [word, val] of Object.entries(WORD_TO_NUM)) {
+        // Match "Five " at start
+        if (lowerName.startsWith(word + ' ')) {
+            qty = val;
+            name = name.slice(word.length).trim();
+            // Remove optional 'of' (e.g., "Five of those")
+            if (name.toLowerCase().startsWith('of ')) {
+                name = name.slice(3).trim();
+            }
+            return { name, qty };
+        }
+    }
+    
+    // 3. Suffix patterns (Original logic)
     // Pattern: "item x3" or "item X3"
     const xPattern = /\s+[xX](\d+)\s*$/;
     const xMatch = name.match(xPattern);

@@ -211,6 +211,13 @@ function switchBox(boxNumber) {
     addRecentLocation(currentBox);
     updateDisplay();
     focusInput();
+    
+    // Audio Feedback
+    if (window.AudioFeedback) {
+        // "Box 42" or "Shelf 2C" - expand for TTS clarify
+        const spoken = currentBox.replace('BOX', 'Box ').replace('SHELF', 'Shelf ');
+        window.AudioFeedback.speak(spoken);
+    }
 }
 
 function setSecondaryLocation(value) {
@@ -241,6 +248,9 @@ function saveSecondaryLocation() {
     }
     
     setSecondaryLocation(normalizedShelf);
+    if (window.AudioFeedback) {
+       window.AudioFeedback.speak(`Secondary location set to ${normalizedShelf}`);
+    }
 }
 
 function toggleBoxComplete(boxNumber) {
@@ -254,6 +264,15 @@ function toggleBoxComplete(boxNumber) {
     saveStateToHistory();
     updateDisplay();
     saveToStorage();
+
+    if (window.AudioFeedback) {
+        if (box.completed) {
+            window.AudioFeedback.playSuccess();
+            window.AudioFeedback.speak("Box completed");
+        } else {
+            window.AudioFeedback.speak("Box reopened");
+        }
+    }
 }
 
 function addItem(itemName) {
@@ -268,14 +287,30 @@ function addItem(itemName) {
     
     // Check duplicates
     const currentItems = window.BoxData.currentSession.boxes[currentBox].items;
-    const duplicates = currentItems.filter(
+    const existingItem = currentItems.find(
         item => item.name.toLowerCase().trim() === parsed.name.toLowerCase().trim()
     );
     
-    let duplicateWarning = '';
-    if (duplicates.length > 0) {
-        const totalQty = duplicates.reduce((sum, item) => sum + (item.qty || 1), 0);
-        duplicateWarning = ` (Duplicate! Already ${duplicates.length} entry${duplicates.length > 1 ? 'ies' : ''}, total qty: ${totalQty + parsed.qty})`;
+    if (existingItem) {
+        // Smart Merge Logic
+        existingItem.qty = (existingItem.qty || 1) + parsed.qty;
+        existingItem.addedAt = new Date().toISOString(); // Update timestamp to bump to top if sorted by time? 
+        // Actually UI reverses array, so last added is top. Updating time doesn't change array order unless we remove and re-push.
+        // Let's remove and re-push to make it appear as "fresh" action
+        const idx = currentItems.indexOf(existingItem);
+        currentItems.splice(idx, 1);
+        currentItems.push(existingItem);
+        
+        saveStateToHistory();
+        updateDisplay();
+        saveToStorage();
+        
+        flashSuccess();
+        if (window.AudioFeedback) {
+             window.AudioFeedback.playSuccess();
+             window.AudioFeedback.speak(`Quantity updated to ${existingItem.qty}`);
+        }
+        return;
     }
     
     const item = {
@@ -283,16 +318,13 @@ function addItem(itemName) {
         name: parsed.name,
         qty: parsed.qty,
         addedAt: new Date().toISOString(),
-        isDuplicate: duplicates.length > 0,
-        // New Schema: Tags support (initially empty or populated by voice context later)
+        isDuplicate: false,
         tags: [] 
     };
     
-    // Check if there is an active context from voice command (global variable to be added)
+    // Check if there is an active context from voice command
     if (window.activeContext && window.activeContext.tags) {
         item.tags = [...window.activeContext.tags];
-        // Also append tags to notes/name for visibility in current UI if needed, 
-        // but for now we keep it in the data structure.
     }
 
     currentItems.push(item);
@@ -301,9 +333,7 @@ function addItem(itemName) {
     updateDisplay();
     saveToStorage();
     
-    if (duplicates.length > 0) {
-        showDuplicateWarning(duplicateWarning);
-    }
+    if (window.AudioFeedback) window.AudioFeedback.playSuccess();
 }
 
 function deleteItem(boxNumber, itemId) {
@@ -908,5 +938,7 @@ window.handleEditInputKeyDown = handleEditInputKeyDown;
 window.switchBox = switchBox;
 window.toggleBoxComplete = toggleBoxComplete;
 window.importFromCSV = importFromCSV;
+// For Voice Command integration
+window.refreshUI = updateDisplay;
 
 document.addEventListener('DOMContentLoaded', init);

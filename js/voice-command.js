@@ -58,34 +58,49 @@ function processVoiceCommand(transcript) {
     // Regex looking for "box 45", "shelf 2c", "box number 50"
     const locationMatch = raw.match(/(?:go to |open |switch to )?(box|shelf|s)\s*(?:number\s*)?(\w+)/i);
     
-    if (locationMatch && !raw.includes("tag") && !raw.includes("context")) {
+    if (locationMatch && !raw.includes("tag") && !raw.includes("context") && !raw.includes("secondary") && !raw.includes("located on")) {
         // It looks like a pure navigation command
-        // reconstructing standard format checks
         const type = locationMatch[1].toLowerCase().startsWith('s') ? 'SHELF' : 'BOX';
         const val = locationMatch[2].toUpperCase();
         
-        // Use global switchBox
         window.switchBox(`${type} ${val}`);
         flashFeedback(`Switched to ${type} ${val}`);
         return;
     }
+
+    // Command 2: Set Secondary Location
+    // "Set shelf 2C", "Located on Shelf 4A", "Secondary location Shelf B"
+    const secondaryMatch = raw.match(/(?:set |located on |secondary(?: location)? )?(?:shelf|s)\s+(\w+)/i);
+    // Use a stricter pattern to avoid confusing "Shelf 2" navigation with "Set Shelf 2" if keywords are present
+    const isExplicitSecondary = raw.includes("set") || raw.includes("located") || raw.includes("secondary");
     
-    // Command 2: "Tag [Context]" or "Set Context [Ctx]"
-    // User Example: "adding photos from estate sale today, adding them to box 45"
-    // Heuristic: If it mentions "box XX", do the switch. If it has extra words, treat as context/tags.
-    
-    // Check for embedded location switch in a longer sentence
-    const embeddedBox = raw.match(/box\s+(\d+)/i);
-    if (embeddedBox) {
-        const boxNum = embeddedBox[1];
-        window.switchBox(`BOX${boxNum.padStart(3, '0')}`);
-        // Continue processing for tags...
+    if (isExplicitSecondary && secondaryMatch) {
+         const val = secondaryMatch[1].toUpperCase();
+         const shelfLoc = `SHELF ${val}`;
+         
+         // Assuming app.js exposes a way to set this, or we modify data directly
+         // We see safe access in app.js via setSecondaryLocation if exposed, or fallback
+         // app.js exposes 'setSecondaryLocation' but it takes the full string "SHELF 2C"
+         // and check if it normalizeShelfLocation.
+         
+         // But setSecondaryLocation is NOT exposed on window in app.js currently!
+         // We might need to handle this via data or expose it.
+         // Let's assume we can trigger the input change or add to window.
+         
+         // Ideally, app.js should expose setSecondaryLocation. 
+         // For now, let's try to find it or trigger the DOM.
+         const input = document.getElementById('secondaryLocationInput');
+         if (input) {
+             input.value = shelfLoc;
+             // Trigger blur/save
+             input.dispatchEvent(new Event('blur'));
+             flashFeedback(`Secondary: ${shelfLoc}`);
+             return;
+         }
     }
     
-    // Extract "tags" or "context"
-    // If user says "Tag estate sale", we add "Estate Sale" to context.
-    // If user says "Clear context", we clear.
-    
+    // Command 3: "Tag [Context]" or "Set Context [Ctx]"
+    // Check for "clear" first
     if (raw.includes("clear context") || raw.includes("clear tags") || raw.includes("stop tagging")) {
         activeContext.tags = [];
         updateContextDisplay();
@@ -93,30 +108,50 @@ function processVoiceCommand(transcript) {
         return;
     }
     
+    // Command: Undo / Correction
+    if (raw === 'undo' || raw === 'correction' || raw === 'no' || raw === 'back') {
+        if (window.BoxData && window.BoxData.undo) {
+            const success = window.BoxData.undo();
+            if (success) {
+                // We need to trigger UI update since undo() affects state but doesn't redraw directly
+                // except that app.js doesn't expose updateDisplay globally? 
+                // Wait, app.js logic for undo key (Ctrl+Z) calls `updateDisplay()`.
+                // We don't have access to `updateDisplay` here.
+                // However, we can re-emit the event or dispatch custom event.
+                // Or better, let's look: `addItem` calls `updateDisplay`.
+                // Ideally `app.js` should listen to a 'data-changed' event or similar.
+                // For now, let's try to reload or assume app.js exposes `updateDisplay`.
+                // It does NOT expose it. 
+                // WORKAROUND: Trigger a non-destructive input event or similar? 
+                // Or expose it. Users prefer safe code. 
+                // Let's modify app.js to expose `window.updateUI = updateDisplay` momentarily.
+                // Actually, let's just dispatch a keydown event for Ctrl+Z? No, that's hacky.
+                // Let's expose `updateDisplay` in app.js as `window.refreshUI`.
+                if (window.refreshUI) window.refreshUI();
+                
+                flashFeedback("Undo successful");
+                if (window.AudioFeedback) window.AudioFeedback.speak("Undo");
+            } else {
+                flashFeedback("Nothing to undo");
+            }
+        }
+        return;
+    }
+
     // parsing "tag [something]"
-    const tagMatch = raw.match(/(?:tag|context|add tag)\s+(.+)/i);
+    const tagMatch = raw.match(/(?:tag|context|add tag|set context)\s+(.+)/i);
     
     if (tagMatch) {
-       addContextTag(tagMatch[1]);
+       // Filter out common filler words if any
+       let content = tagMatch[1].replace(/^(as|to|is)\s+/, '');
+       addContextTag(content);
        return;
     }
     
-    // Fallback: If not a location command, assume it describes the current context/item if explicitly triggered via FAB?
-    // User requested: "adding photos from estate sale today" -> Tag: "Estate Sale", "Today"
-    
-    // Simple Keyword extraction for demo purposes (User can refine)
-    if (raw.includes("estate sale")) addContextTag("Estate Sale");
-    
-    // Date handling
-    if (raw.includes("today")) {
-        addContextTag(new Date().toLocaleDateString());
-    }
-    
-    // If nothing matched, maybe they just said a tag name directly?
-    // We'll treat the whole phrase as a tag if it's short and we are in "listening" mode
-    if (!locationMatch) {
-        addContextTag(transcript); // Use original casing
-    }
+    // If user says simple recognized keywords (can be extended via config later)
+    if (raw.includes("fragile")) addContextTag("Fragile");
+    if (raw.includes("heavy")) addContextTag("Heavy");
+    if (raw.includes("photos")) addContextTag("Photos");
 }
 
 function addContextTag(text) {
@@ -208,11 +243,18 @@ function toggleListening() {
 }
 
 function flashFeedback(text) {
+    // Visual Toast
     const toast = document.createElement('div');
     toast.className = 'toast-feedback';
     toast.textContent = text;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 2500);
+    
+    // Audio Feedback
+    if (window.AudioFeedback) {
+        // "Switched to BOX 42" -> "Switched to Box four two"
+        window.AudioFeedback.speak(text);
+    }
 }
 
 // Initialize
